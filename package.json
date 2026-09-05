@@ -1,0 +1,19 @@
+{
+  "name": "universal-converter-cn",
+  "version": "0.3.0",
+  "description": "Windows 本地万能文件转换器",
+  "main": "main.js",
+  "author": "ZhuZhuBaiBai",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "package:win": "node scripts/package-win.mjs",
+    "test": "node scripts/test.cjs",
+    "test:integration": "node scripts/test.cjs --integration"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "44.2.0"
+  }
+}

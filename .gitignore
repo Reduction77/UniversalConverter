@@ -1,0 +1,17 @@
+node_modules/
+dist/
+release/
+coverage/
+*.log
+*.zip
+*.7z
+*.asar
+*.exe
+*.dll
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+tools/*
+!tools/README.txt

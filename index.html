@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>万能文件转换器</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><span>⇄</span></div>
+        <div><div class="brand-title">万能转换器</div><div class="brand-sub">Windows 便携版</div></div>
+      </div>
+      <nav>
+        <button class="nav active" data-page="convert"><span class="nav-icon">▣</span>文件转换</button>
+        <button class="nav" data-page="engines"><span class="nav-icon">◇</span>转换引擎</button>
+        <button class="nav" data-page="settings"><span class="nav-icon">⚙</span>偏好设置</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <button id="sidebarEngineStatus" class="engine-summary">转换引擎　检测中…</button>
+        <div class="version">v0.3.0 · 便携 EXE</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section id="page-convert" class="page active">
+        <header class="page-header">
+          <div><h1>文件转换</h1><p>文件只在你的电脑上处理，不会上传到网络</p></div>
+          <button id="openLastOutput" class="button ghost hidden">打开输出目录</button>
+        </header>
+
+        <div id="dropZone" class="drop-zone">
+          <div class="drop-symbol">↓</div>
+          <div class="drop-title">把文件或文件夹拖到这里</div>
+          <div class="muted">自动识别类型，也可以混合添加多种格式</div>
+          <div class="drop-actions">
+            <button id="chooseFiles" class="button">选择文件</button>
+            <button id="chooseFolder" class="button">选择文件夹</button>
+          </div>
+        </div>
+
+        <div class="card options-card">
+          <label class="field compact"><span>转换为</span><select id="targetSelect"><option value="auto">智能推荐</option></select></label>
+          <label class="field output-field"><span>保存位置</span><div class="inline-control">
+            <select id="outputMode"><option value="source">原文件所在位置</option><option value="custom">自定义文件夹</option></select>
+            <input id="outputPath" class="hidden" readonly placeholder="请选择输出文件夹">
+            <button id="chooseOutput" class="button hidden">浏览</button>
+          </div></label>
+          <label class="field compact"><span>同名文件</span><select id="conflictSelect"><option value="rename">自动重命名</option><option value="overwrite">覆盖</option><option value="skip">跳过</option></select></label>
+        </div>
+
+        <div class="queue-heading">
+          <div><h2 id="queueCount">转换队列 · 0 个文件</h2><span class="queue-hint">长名称可用表格底部滚动条左右查看</span></div>
+          <div class="queue-actions">
+            <button id="retryFailed" class="button" disabled>重试失败</button>
+            <button id="removeSelected" class="button">移除所选</button>
+            <button id="clearQueue" class="button">清空</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th class="check-col"><input id="selectAll" type="checkbox"></th><th class="index-col">序号</th><th>文件</th><th>类型 / 大小</th><th>目标</th><th>保存为</th><th>状态</th><th class="progress-col">进度</th><th class="result-actions">操作</th></tr></thead>
+            <tbody id="queueBody"><tr class="empty-row"><td colspan="9">暂时没有文件</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="bottom-controls">
+          <label class="check"><input id="preserveStructure" type="checkbox" checked><span>保留文件夹结构</span></label>
+          <label class="check"><input id="hardwareAcceleration" type="checkbox" checked><span>NVIDIA 硬件加速</span></label>
+          <label class="mini-field"><span>视频质量</span><select id="videoQuality"><option value="balanced">均衡</option><option value="quality">更高画质</option><option value="smaller">更小体积</option></select></label>
+          <div class="spacer"></div>
+          <button id="logToggle" class="button">运行日志</button>
+          <button id="cancelButton" class="button danger" disabled>停止</button>
+          <button id="startButton" class="button primary" disabled>开始转换</button>
+        </div>
+        <div class="overall-track"><div id="overallBar"></div></div>
+
+        <div id="logPanel" class="log-panel hidden">
+          <div class="log-toolbar"><strong>运行日志</strong><div class="spacer"></div>
+            <select id="logFilter"><option value="all">全部级别</option><option value="success">Success</option><option value="info">Info</option><option value="error">Error</option><option value="debug">Debug</option></select>
+            <button id="clearLogs" class="button dark">清空日志</button>
+            <button id="exportLogs" class="button dark">导出诊断日志</button>
+          </div>
+          <pre id="logView"></pre>
+        </div>
+      </section>
+
+      <section id="page-engines" class="page">
+        <header class="page-header"><div><h1>转换引擎</h1><p>软件自动查找系统安装目录，也可以在这里直接安装</p></div>
+          <div class="header-actions"><button id="installCommon" class="button primary">管理员安装常用引擎</button><button id="refreshEngines" class="button">重新检测</button></div>
+        </header>
+        <div class="engine-head"><h2 id="engineCount">正在检测…</h2><span class="muted">安装过程会显示在下方日志中</span></div>
+        <div id="engineList" class="engine-list"></div>
+        <button id="exportInstallLogs" class="button">导出诊断日志</button>
+        <div id="installLog" class="install-log"><div class="muted">尚未开始安装。常用引擎包含 FFmpeg、ImageMagick 和 LibreOffice。</div></div>
+      </section>
+
+      <section id="page-settings" class="page">
+        <header class="page-header"><div><h1>偏好设置</h1><p>这些设置只保存在当前电脑</p></div></header>
+        <div class="card settings-card">
+          <h2>默认行为</h2>
+          <label class="setting-row"><div><strong>保留文件元数据</strong><span>尽量保留标题、作者、拍摄时间等信息</span></div><input id="keepMetadata" type="checkbox" checked></label>
+          <label class="setting-row"><div><strong>完成后打开输出文件夹</strong><span>队列全部结束后自动显示结果位置</span></div><input id="autoOpenOutput" type="checkbox"></label>
+        </div>
+        <div class="card about-card">
+          <h2>关于</h2>
+          <p>万能文件转换器 v0.3.0</p>
+          <p class="muted">便携版自带程序运行环境，不需要安装 Python，也不需要运行 BAT。格式转换由电脑上安装的开源引擎完成。</p>
+          <p class="muted">默认不会修改原文件；选择“覆盖”时，仅覆盖同名的目标文件。</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <div id="modal" class="modal-backdrop hidden"><div class="modal"><h3 id="modalTitle"></h3><p id="modalMessage"></p><button id="modalClose" class="button primary">知道了</button></div></div>
+  <dialog id="startupCheck" aria-labelledby="startupTitle">
+    <div class="startup-header"><span class="startup-icon">✓</span><div><h2 id="startupTitle">首次使用 · 转换引擎检查</h2><p>只检查本机环境，不会自动安装软件</p></div></div>
+    <p id="startupSummary" role="status" aria-live="polite">正在检测转换引擎，请稍候…</p>
+    <div id="startupResults"></div>
+    <p class="startup-note">缺少某个引擎只影响对应格式，不妨碍使用其他已就绪的功能。</p>
+    <label class="check"><input id="startupRemember" type="checkbox" checked>以后不再自动弹出此检查窗口</label>
+    <div class="startup-actions"><button id="startupRetry" class="button" disabled>重新检测</button><div class="spacer"></div><button id="startupSkip" class="button">暂时跳过</button><button id="startupManage" class="button primary" disabled>前往转换引擎</button></div>
+  </dialog>
+  <script src="renderer.js"></script>
+</body>
+</html>
