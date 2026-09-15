@@ -1,147 +1,287 @@
-# 万能文件转换器
+# dsh-github-ops
 
-面向 Windows 的本地文件转换工具，使用 Electron 构建，提供中文界面与浅蓝色配色。通过 FFmpeg、ImageMagick、LibreOffice 等外部引擎处理视频、音频、图片、文档和压缩包。
+DeepSeek Harness 插件：**建仓、推文件、开 PR、发 release 并上传附件**。
 
-**当前版本：v0.3.0 · 开发中。** “万能”是项目名称，不代表支持任意格式互转。实际可转换范围受源文件、目标格式和引擎能力限制。
+对标 opencode 的 GitHub MCP —— 一次配好凭据长期可用，模型在对话里直接调用 `github_*` 工具完成 GitHub 事务。
 
-## 快速使用
+- **零依赖**：只用 Node 内置模块。ZIP 打包自实现（含 CRC-32），HTTP 走内置 `fetch`，不装任何 npm 包。
+- **不走 `git` 二进制**：全部走 REST API v3。本地 `git push` 需要凭据助手或交互式输入，非交互式 harness 两样都没有；Git Data API 用同样的语义完成提交且不需要它们。
+- **凭据是引用不是明文**：配置里只有 `GITHUB_TOKEN` 这个引用名，值每次操作现取，换 token 不用重启，不进日志、不进工具输出。
+- **版本一致性硬拦**：tag / `package.json` / 附件名三者不一致时拒绝发布。
 
-1. 在本仓库的 **Releases** 中下载 Windows x64 便携版 ZIP（需要维护者先上传发布包）。
-2. 完整解压到独立文件夹，双击 **万能文件转换器.exe**。
-3. 首次启动会展示转换引擎检查报告。按需要前往“转换引擎”安装缺失项，也可以先跳过。
-4. 拖入文件或文件夹，选择目标格式、保存位置及同名文件处理方式。
-5. 点击“开始转换”。完成后，可在队列右侧打开或定位结果；失败项可查看原因。
+---
 
-便携版自带程序运行环境，无需安装 Node.js 或 Python。请保留 EXE 旁的 resources、locales、DLL 等运行文件，不要只复制 EXE。
+## 工具清单
 
-程序本身正常双击启动即可。“管理员安装”按钮会单独请求 Windows UAC 授权，并打开管理员 CMD。整个程序以管理员身份运行可能导致资源管理器拖放被 Windows 阻止。
+| 工具 | 作用 | 审批 |
+|---|---|---|
+| `github_auth_status` | 报告凭据是否可用、属于哪个账号、剩余配额。**永不返回 token 本身** | ✅ 免审批 |
+| `github_create_repository` | 建仓，可选 topics / 简介 / 可见性 | ✅ 免审批 |
+| `github_push_files` | 一次提交写入多个文件（`blob → tree → commit → ref`），分支不存在则自动创建 | ✅ 免审批 |
+| `github_upload_project` | 一句话上传本地项目目录：可选建仓 → 提交整棵树 → 可选开 PR | ✅ 免审批 |
+| `github_release_publish` | 发 release 并挂附件。能从源码代打包，自带版本校验与正文模板 | ✅ 免审批 |
+| `github_get_release` | 读已有 release：正文、附件名/大小/下载量、草稿状态 | ✅ 免审批 |
 
-## 功能
+**只有破坏性操作才弹审批**，且一次授权只对一次调用有效：
 
-- 添加单个文件、多个文件或文件夹，支持拖放与重复路径过滤。
-- 推荐另一种常见目标格式，避免自动推荐与源格式相同。
-- 顶部批量设置目标格式，每行也可单独指定；“跟随批量设置”恢复顶部控制。
-- 选择源目录或自定义输出目录，支持保留文件夹结构。
-- 同名文件可自动重命名、覆盖或跳过。
-- 长文件名横向滚动查看；队列显示进度、状态及结果操作。
-- 转换先写临时目录，成功并检查输出文件非空后再保存。失败、取消不会用临时结果覆盖旧文件。
-- 多文件输出（如多页 PDF）放入独立的结果文件夹。
-- 支持停止转换、重试失败项、查看失败原因、打开和定位结果。
-- 首次启动引擎检查，可选择不再弹窗；后续仍会后台检测。
-- “缺少引擎”状态可跳转并定位对应引擎。
-- 管理员安装、更新引擎，并显示结果及退出代码。
-- 安装与转换互斥，任务进行时阻止直接关闭程序。
-- 转换页和引擎页均可导出诊断日志。
+| 触发 | 工具与参数 |
+|---|---|
+| force push | `github_push_files` / `github_upload_project` 的 `force: true` |
+| 删 tag 重建 | `github_release_publish` 的 `deleteExistingTag: true` |
 
-## 格式与引擎
+审批机制是 `tools/pre-execute` waterfall，返回 `{ kind: 'ask' }` 后由 harness 的审批服务裁决。**没有审批通道时 `ask` 自动降级为拒绝**（fail closed），不会静默放行。
 
-下表是用途和示例，不是所有格式组合的兼容性承诺。以界面选项及引擎实际执行结果为准。
+---
 
-| 类型 | 示例 | 依赖 |
-| --- | --- | --- |
-| 视频、音频 | MP4、MKV、MOV、MP3、FLAC、WAV、M4A | FFmpeg |
-| 图片 | JPG、PNG、WebP、AVIF、TIFF、BMP | ImageMagick |
-| PDF 页面导出 | PDF → PNG / JPG / TIFF | ImageMagick，通常还需 Ghostscript |
-| 办公文档 | Word / Excel / PowerPoint → PDF 等 | LibreOffice |
-| 文本与标记文档 | Markdown、HTML 等 | Pandoc；转 PDF 还需 LibreOffice |
-| 电子书 | EPUB、MOBI、AZW3、PDF 等 | Calibre |
-| 压缩包 | ZIP、7Z、RAR 等输入 → ZIP / 7Z | 7-Zip |
+## 安装
 
-“安装常用引擎”处理 FFmpeg、ImageMagick 和 LibreOffice。其他引擎按需要单独安装，也可使用“指定路径”。
+### 1. 放到一个稳定位置
 
-便携引擎可放在 EXE 同目录的 tools 文件夹中；详情见 [tools/README.txt](tools/README.txt)。转换引擎不包含在此源码包内。
+插件会被 profile 长期引用，所以放在你不会随手删掉的地方。删掉或移动它，profile 下次启动就会失败。
 
-## 环境要求
+### 2. 在 profile 的 patch 层注册
 
-- 目标运行平台：Windows x64；主要面向 Windows 11。
-- 引擎自动安装依赖可运行的 WinGet、网络连接与管理员授权。
-- NVIDIA 硬件加速依赖兼容的显卡、驱动和 FFmpeg 编码支持；不适用时请取消勾选。
-- 转换时需要为临时输出及目标结果预留磁盘空间。
+编辑 `$DSH_HOME/profiles/web/cordis.patch.yml`（通常是 `~/.dsh/profiles/web/cordis.patch.yml`），在顶层数组里追加：
 
-本程序在本机处理转换文件。安装引擎会联网访问软件源和下载服务。诊断日志含本机路径及错误信息，分享前请自行检查。
-
-## 源码运行
-
-开发环境：**Node.js 22.12.0 或更高版本**，以及 npm。依赖版本记录在 package-lock.json 中。
-
-在项目根目录执行：
-
-```sh
-npm ci
-npm start
+```yaml
+- insert:
+    - id: github-ops
+      name: /绝对路径/dsh-github-ops/index.js
+      config:
+        tokenRef: GITHUB_TOKEN
+        defaultOwner: Reduction77
 ```
 
-首次安装依赖需要下载 Electron。开发运行同样需要独立安装转换引擎。
+> ⚠️ **`name` 必须是绝对路径（或 `file://` URL），不能用裸包名。**
+>
+> 这是实测结论，不是保守写法：把包放进 profile 的 `node_modules`（包括用 `dsh plugin --profile web add "link:/path"` 让 pnpm 建好链接）再用 `name: dsh-github-ops`，`dsh --dump-config` 会正常输出、依赖也确实链接成功，但**启动时炸**：
+>
+> ```
+> Error: failed to import loader entry github-ops (dsh-github-ops):
+> Cannot find package 'dsh-github-ops' imported from
+> .../@deepseek-ai/cordis-plugin-loader/lib/index.js
+> ```
+>
+> 原因是 cordis loader 从**它自己在 harness checkout 里的位置**发起 import，Node 的解析向上遍历永远到不了 profile 目录。内置插件能用裸名是因为它们本来就在 harness 的 `node_modules` 里。
+>
+> 顺带一提：`dsh plugin add` 建的 `link:` 依赖对**第三方插件不可用**，而且 pnpm 会把它写成相对链接（如 `../../../../dsh-github-ops`），一旦插件目录移动就悬空。所以直接写绝对路径最省事。
 
-## 测试
+如果你的环境有 `DSH_HOME` 之外的 profile 别名，把上面的 `web` 换成对应名字即可。
+
+### 3. 配置凭据
+
+DSH 里打开 **设置 → 插件 → 凭据 → 新增**：
+
+- 键名：`GITHUB_TOKEN`
+- 值：你的 Personal Access Token
+
+Token 权限建议：
+
+| scope | 用途 |
+|---|---|
+| `repo` | **必需**。公开与私有仓库的完整读写、建仓、发 release |
+| `workflow` | 要改 `.github/workflows/*` 才需要，否则推这类文件会被 GitHub 直接拒 |
+| `delete_repo` | 只有要删仓库才需要 |
+
+也可以走环境变量（provider 的解析顺序是 env → 凭据存储 → `.env` 回退），但设置页更省事且不用重启。
+
+### 4. 重启 dsh web
 
 ```sh
-npm test
+dsh web
 ```
 
-默认运行不需要外部转换引擎的逻辑测试，覆盖推荐格式、首次检查、逐行设置、WinGet 查找、输出保护和任务互斥等。
+### 5. 验证
 
-实际音频转换测试需要 PATH 中存在 ffmpeg 和 ffprobe：
+对话里说「用 github_auth_status 看看凭据状态」。返回 `valid: true` 加你的账号名就通了。
+
+排查工具没出现时，在 config 里加 `statusFile`，插件启动时会把工具清单写到那个文件：
+
+```yaml
+        statusFile: /tmp/dsh-github-ops-status.json
+```
+
+---
+
+## 用法示例
+
+### 发一个插件版本（最常用）
+
+对话里直接说：
+
+> 把 `v1.7.0` 发到 `Reduction77/napcat-plugin-bili-recognizer`，目录在当前工作区
+
+模型会调用：
+
+```
+github_release_publish(tag: "v1.7.0", repo: "napcat-plugin-bili-recognizer", dir: "/path/to/project")
+```
+
+它会依次做：
+
+1. **解析附件** —— 按顺序尝试：显式 `assetPath` → `dist/<包名>-<版本>.zip` → 项目的 `pack:plugin`/`package` 脚本 → 内置 ZIP 打包
+2. **版本一致性校验** —— tag、`package.json` 的 `version`、附件名里的版本三者必须一致
+3. **建 tag**（不存在时）
+4. **组装正文** —— 抓 `CHANGELOG.md` 里对应版本的小节，拼上标准安装段
+5. **建或更新 release**
+6. **流式上传附件** —— 同名附件自动先删后传
+
+结果里会告诉你是新建还是更新、替换了哪个旧附件、附件由什么产出。
+
+### 上传一个项目
+
+```
+github_upload_project(repo: "my-tool", dir: "/path/to/project", createPullRequest: true)
+```
+
+自动排除 `node_modules`、`.git`、`dist`、`config`、`data`、`downloads`、`__pycache__` 等目录 —— 不排的话一个 `dist/` 就能把仓库撑到几百 MB。
+
+### 只用文件推送
+
+```
+github_push_files(
+  repo: "my-tool",
+  branch: "feature/x",
+  message: "feat: 新增导出",
+  files: [
+    { path: "src/a.mjs", localPath: "/abs/path/src/a.mjs" },
+    { path: "README.md", content: "# 标题" }
+  ]
+)
+```
+
+二进制文件也走这条路（内容按 base64 传 blob），PNG 和 exe 都能原样到达。
+
+---
+
+## 版本一致性校验
+
+`checkVersionConsistency` 比对三处版本：**tag**、**`package.json` 的 `version`**、**附件文件名里的版本**。
+
+不一致时默认**拒绝发布**并逐条列出差异：
+
+```
+版本一致性校验未通过，已拒绝发布：
+- tag 是 `2.0.0`，但 package.json 里是 `1.6.0`
+- tag 是 `2.0.0`，但附件名里的版本是 `0.3.0`
+- 附件名 `demo_v0.3.0_GitHub_Source.zip` 里出现了多个版本号，容易让人误判
+```
+
+这条规则来自一个真实案例：`Reduction77/UniversalConverter` 的 tag 是 `v1.0.0`，附件却叫 `UniversalConverter_v0.3.0_GitHub_Source.zip`。GitHub 不会阻止这种发布，而下载的人无从分辨。
+
+确认无误要强行发布，显式传 `forceVersion: true`，结果里会标注"已用 forceVersion 跳过"及具体差异。
+
+---
+
+## 附件与打包
+
+### 自动解析顺序
+
+| 顺序 | 来源 | 说明 |
+|---|---|---|
+| 1 | `assetPath` | 你明确给的路径 |
+| 2 | `dist/<包名>-<版本>.zip` | 项目自己的打包产物，命中就不重新打包 |
+| 3 | `package.json` 的 `pack:plugin` 或 `package` 脚本 | shell-free 执行（按空白切分后 `spawn`，不走 shell） |
+| 4 | 内置 ZIP 打包 | 项目没有任何打包脚本时的兜底 |
+
+脚本跑成功但产物名不对时，会明确报出来而不是拿错文件上传 —— 这种情况在 `pack:plugin` 改过输出名之后很容易发生。
+
+### 内置打包的文件选择
+
+- 根文件：`package.json`、`index.mjs`、`index.js`、`README.md`、`LICENSE`、`CHANGELOG.md`、`THIRD_PARTY_NOTICES.md`
+- 根目录：`lib`、`src`、`webui`、`assets`、`docs`、`tools`、`scripts`
+- 后缀白名单：`.mjs .cjs .js .ts .css .html .md .json .txt .png .jpg .jpeg .webp .gif .svg .yml .yaml .py .sh`
+- 符号链接**不解引用**（一个指向项目外的链接会把无关内容带进发布产物）
+
+### 大文件
+
+- 附件上传走 `openAsBlob` **流式读取**，不整个读进内存。68 MB 的 exe 没问题。
+- 上传超时独立于普通请求（默认 10 分钟，`uploadTimeoutMs` 可调），因为默认 30 秒对几十 MB 的文件必然不够。
+- 显式设置 `Content-Length`：不设的话 fetch 会用 chunked 编码，GitHub 的上传端点直接拒。
+- 附件走 `uploads.github.com`（**不是** `api.github.com`），这是 GitHub 返回的 `upload_url` 模板里的 host。
+- **附件不进 git 历史** —— 仓库体积零增长。这对 195 MB 的仓库是刚需。
+- GitHub 单附件上限 **2 GB**。
+
+### release 正文
+
+默认从 `CHANGELOG.md` 抽取对应版本的小节，拼成：
+
+```markdown
+## v1.6.0
+
+<CHANGELOG 里 1.6.0 那一节的内容>
+
+### 下载
+
+- `napcat-plugin-bili-recognizer-1.6.0.zip`
+
+### 安装
+
+安装步骤见仓库 README 的 **安装** 一节；下载上面的附件，不要使用 GitHub 自动生成的
+Source code 压缩包（它带一层仓库目录，与安装包结构不同）。
+```
+
+安装段是**指针而非副本** —— README 的安装步骤带具体文件名和版本号，复制一份到正文里就等于多了一个忘改的地方。
+
+传 `body` 整段覆盖；`notesFromChangelog: false` 关掉自动抽取。
+
+---
+
+## 配置项
+
+| 配置 | 默认 | 说明 |
+|---|---|---|
+| `tokenRef` | `GITHUB_TOKEN` | 凭据引用名 |
+| `apiBase` | `https://api.github.com` | REST 基地址，GitHub Enterprise 需改 |
+| `timeoutMs` | `30000` | 普通请求超时 |
+| `uploadTimeoutMs` | `600000` | 附件上传超时 |
+| `packTimeoutMs` | `180000` | 打包脚本超时 |
+| `defaultOwner` | `''` | 省略 `owner` 时用谁；留空则查询当前认证用户 |
+| `statusFile` | `''` | 启动时写状态卡片的路径，留空不写 |
+
+---
+
+## 已知限制
+
+- **不能删仓库、删分支、删文件、改可见性、合并 PR。** 这些是刻意不做的：本插件的定位是发布链路，而删除类操作应该走 GitHub 网页或 `gh`，那里有更完整的确认与审计。审批门目前只为 force push 和 tag 重建而设。
+- **不能改仓库设置**（描述、topics 之外的部分）。建的仓能带 topics，改已有的不行。
+- **不发 Discussion、不碰 Issues。**
+- **私有仓库需要 `repo` scope**，否则 `github_auth_status` 会报 `valid: false` 或操作返回 404。
+- 附件上传**同步等待**完成。68 MB 大约几十秒，取决于上行带宽。
+
+---
+
+## 开发
 
 ```sh
-npm run test:integration
+npm run verify     # preflight（依赖链接 + schema 校验）+ 全部单测
+npm test           # 只跑单测
+npm run preflight  # 只跑 preflight
 ```
 
-该测试生成短音频样本，经转换流程生成 MP3，再用 FFprobe 检查结果。
+`preflight` 做三件事：从 `which dsh` 反查 harness checkout 并把 peer 依赖链接进来、确认 `apply()` 注册的工具集合与 `REGISTERED_TOOL_NAMES` 一致、用 harness 自己的 `assertObjectJsonSchema` / `assertSupportedJsonSchema` 校验编译后的线协议 schema。
 
-## 打包 Windows 便携版
+测试不依赖网络与真实 token：
 
-在已执行 npm ci 的项目根目录运行：
+- `test/zip.test.mjs` —— 手写 ZIP 的正确性由 **Python `zipfile`** 独立读取并逐项校验 CRC 来证明，而不是用自己的代码验自己。
+- `test/github-ops.test.mjs` —— 用假 `fetch` 按 GitHub API 语义应答，跑通建仓 → 推文件 → 开 PR → 发 release → 传附件的完整流程，并断言请求序列、审批门行为、以及校验失败时**零写入**。
 
-```sh
-npm run package:win
+---
+
+## 目录结构
+
+```
+index.js                  插件入口：Config、6 个工具定义、审批钩子、启动标记
+lib/gh-http.js            REST 客户端、流式上传、凭据解析与脱敏
+lib/gh-zip.js             零依赖 ZIP 打包（自实现 CRC-32 兜底）
+lib/gh-release.js         版本规范化、一致性校验、CHANGELOG 抽取、正文模板
+lib/gh-approval.js        破坏性操作分类
+cordis.patch.yml          bundle patch 层模板
+scripts/preflight.mjs     装载契约与 schema 校验
+scripts/probe-api.mjs     假 GitHub API，供端到端探针使用
+test/                     单测
 ```
 
-输出位于 **dist/万能文件转换器-win32-x64/**。打包脚本会附带使用说明和 tools 说明，并排除开发文档、测试与构建目录。
+## 许可
 
-建议在 Windows 开发环境打包。脚本可在其他平台执行，但跨平台构建可能需要额外环境或网络条件；本项目未承诺所有环境均可直接打包。
-
-发布时压缩整个输出目录。不要只上传 EXE，也不要移除 Electron 附带的 LICENSE 和 LICENSES.chromium.html。
-
-## 目录说明
-
-| 路径 | 内容 |
-| --- | --- |
-| main.js | 主进程：引擎、文件扫描、转换、安装与系统操作 |
-| preload.js | 界面与主进程之间的接口 |
-| renderer.js | 页面交互、队列与首次检查 |
-| index.html / styles.css | 界面结构与样式 |
-| installer.js / winget-resolver.js | 管理员安装脚本及 WinGet 查找 |
-| safe-output.js / operation-lock.js | 输出保护与任务互斥 |
-| assets/ | 程序图标 |
-| tools/ | 可选便携引擎说明 |
-| scripts/ | 测试与打包入口 |
-| tests/ | 逻辑测试和音频集成测试 |
-| docs/ | 上传指南、使用说明 |
-| CHANGELOG.md | 版本记录 |
-| THIRD_PARTY_NOTICES.md | 第三方组件说明 |
-
-## 已知限制与验证范围
-
-- 已通过逻辑测试和 WAV → MP3 集成测试；并非所有引擎和格式组合都已验证。
-- Windows UAC 安装、系统打开/定位以及完整界面交互仍需实机回归。
-- “已就绪”目前主要根据引擎路径查找结果判断，未对所有引擎逐一执行版本和功能验证。
-- 输出检查确认文件存在、非空及类型正常，不代表已验证每种格式内部内容完整性。
-- 安装结果依据 WinGet 退出结果及后续路径检测；“没有适用更新”不保证其他发行渠道没有更新版本。
-- 暂不包含 OCR、PDF 编辑、密码输入、断点续转、自动更新或完整媒体参数面板。
-- 图片透明度、动画帧、元数据与文档排版可能随转换方式改变。建议先用副本测试重要文件。
-- 硬件编码失败尚无自动软件编码回退；可关闭硬件加速后重试。
-- 默认保护转换失败场景，但不保证抵御突然断电、系统崩溃等情况；异常退出可能留下临时目录。
-
-## 反馈问题
-
-请说明程序版本、Windows 版本、源格式、目标格式及操作步骤。可附“导出诊断日志”，分享前移除私人路径等信息。暂不建议把私人原文件直接上传到公开 Issue。
-
-## 上传 GitHub
-
-源码上传仓库，便携版压缩包作为 Releases 附件。具体步骤见 [GitHub 上传与发布指南](docs/GITHUB_UPLOAD.md)。
-
-## 许可证
-
-沿用项目已有 package.json 中的 MIT 声明，项目源码采用 [MIT License](LICENSE)。
-外部引擎和 Electron 等第三方组件适用其各自许可证，见 [第三方说明](THIRD_PARTY_NOTICES.md)。
+MIT

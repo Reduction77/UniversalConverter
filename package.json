@@ -1,19 +1,41 @@
 {
-  "name": "universal-converter-cn",
-  "version": "0.3.0",
-  "description": "Windows 本地万能文件转换器",
-  "main": "main.js",
-  "author": "ZhuZhuBaiBai",
-  "license": "MIT",
-  "private": true,
-  "scripts": {
-    "start": "electron .",
-    "package:win": "node scripts/package-win.mjs",
-    "test": "node scripts/test.cjs",
-    "test:integration": "node scripts/test.cjs --integration"
+  "name": "dsh-github-ops",
+  "version": "0.1.0",
+  "description": "GitHub 仓库与发布操作插件：建仓、推文件、开 PR、发 release 并上传附件",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
   },
-  "devDependencies": {
-    "@electron/packager": "20.3.0",
-    "electron": "44.2.0"
+  "files": [
+    "index.js",
+    "lib/**/*.js",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "preflight": "node scripts/preflight.mjs",
+    "verify": "node scripts/preflight.mjs && node --test \"test/*.test.mjs\""
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-credentials": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": { "optional": true },
+    "@deepseek-ai/dsh-credentials": { "optional": true },
+    "@deepseek-ai/dsh-tools": { "optional": true },
+    "@deepseek-ai/schemastery": { "optional": true }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    }
   }
 }

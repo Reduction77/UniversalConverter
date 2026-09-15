@@ -1,0 +1,19 @@
+# dsh-github-ops — bundle patch layer
+#
+# Applied when this package is listed in a profile's `dsh.profile.bundles`, or when
+# these entries are copied into the profile's own `cordis.patch.yml`.
+#
+# `tokenRef` is a credential *reference*, never a secret: the value is resolved per
+# operation from DSH's credential service (Settings → Plugins → Credentials).
+- insert:
+    - id: github-ops
+      name: dsh-github-ops
+      config:
+        tokenRef: GITHUB_TOKEN
+        apiBase: https://api.github.com
+        timeoutMs: 30000
+        # A release executable can be tens of megabytes; the upload budget is separate
+        # from the ordinary request budget because of that.
+        uploadTimeoutMs: 600000
+        packTimeoutMs: 180000
+        defaultOwner: ''
